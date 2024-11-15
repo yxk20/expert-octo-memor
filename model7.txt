@@ -1,0 +1,226 @@
+units                real
+ 
+variable             T equal 333
+variable             P equal 1
+
+dimension            3
+boundary             p p p 
+atom_style           full
+bond_style           harmonic
+angle_style          harmonic
+dihedral_style       harmonic
+improper_style       cvff
+pair_style           lj/cut/coul/long 11 
+pair_modify          shift yes
+kspace_style         pppm  0.001
+
+read_data            3.5sq.data
+
+
+###
+pair_style           hybrid lj/cut/coul/long 11 lj/cut 3.0
+pair_modify          shift yes 
+pair_coeff  1 1    lj/cut/coul/long   0.1554000000   3.1655600000 # oh  m opls
+pair_coeff  2 2    lj/cut/coul/long   0.1554000000   3.1655600000 # oz  m opls
+pair_coeff  3 3    lj/cut/coul/long   0.0000018405   3.3020300000 # sz  m opls
+pair_coeff  4 4    lj/cut/coul/long   0.0000000000   0.0000000000 # ho  m opls
+pair_coeff  5 5      lj/cut/coul/long   0.0558519000   2.7570000000 # ct  m EPM2
+pair_coeff  6 6     lj/cut/coul/long   0.1598520000   3.0330000000 # o'  m EPM
+pair_coeff  7 7      lj/cut/coul/long   0.1557600000   3.1655200879 # o*  m SPCE
+pair_coeff  8 8      lj/cut/coul/long   0.0000000000   0.0000000000 # h*  m SPCE
+pair_coeff  9 9      lj/cut/coul/long   0.1557600000   3.1655200879 # o*u  m SPCE
+pair_coeff  10 10      lj/cut/coul/long   0.0000000000   0.0000000000 # h*u  m SPCE
+pair_coeff  11 11      lj/cut/coul/long   0.0203070415   2.5559876901 # he  m opls 
+
+
+           
+pair_coeff  1*10  11  lj/cut 0.5 2.5
+
+
+
+
+
+dihedral_style  hybrid opls harmonic
+pair_modify          shift yes      
+dihedral_coeff 1 harmonic  0.3333   1   3 # ho-oh-sz-oz harmoni
+dihedral_coeff 2 harmonic  0.3333   1   3 # ho-oh-sz-oh harmonic
+dihedral_coeff 3 harmonic  0.3333   1   3 # sz-oz-sz-oh harmonic
+dihedral_coeff 4 harmonic  0.3000   1   3 # sz-oz-sz-oz harmonic
+
+
+
+
+
+
+###
+neighbor             2.0  bin
+neigh_modify         every   1  delay  0  check  yes 
+
+#
+group  co2          type  5 6
+group  h2o          type  7 8
+group  wall         type  1 2 3 4                   
+group  plane        type  11   
+group  hu2ou          type  9 10
+
+#
+region left         block	      INF        300     INF INF      INF      INF               
+region mid          block       300        500.00   INF INF      INF      INF           
+region right        block       500.000    INF       INF INF      INF      INF   
+
+#
+group left   region left  
+group mid    region mid   
+group right  region right
+
+#
+group  plane1         intersect  plane  left
+group  plane2         intersect  plane  mid
+group  plane3         intersect  plane  right
+
+
+#
+group  rigid union wall plane1 plane2 plane3           
+###
+#
+neigh_modify exclude group rigid rigid
+
+
+ fix  setforce1  plane1     setforce 0.0  0.0  0.0
+ fix  setforce2  plane2     setforce 0.0  0.0  0.0
+#fix  setforce3  plane3     setforce 0.0  0.0  0.0
+ fix  setforce3  wall       setforce 0.0  0.0  0.0
+
+
+fix  r1  plane1    rigid  single  force  1 off off off torque 1 off off off
+fix  r2  plane2    rigid  single  force  1 off off off torque 1 off off off
+fix  r3  plane3    rigid  single  force  1 on  off off torque 1 off off off
+fix  r4  wall      rigid  single  force  1 off off off torque 1 off off off
+
+fix  aveforce1  plane3 aveforce    -0.00426313  NULL  NULL #20mp
+
+thermo              1000
+thermo_style         custom step cpu temp press etotal enthalpy evdwl ecoul epair ebond eangle pe ke
+min_style         cg
+minimize          1.0e-9 1.0e-9 50000 50000
+
+
+reset_timestep       0
+
+
+thermo         1000
+thermo_style   custom step cpu temp press etotal
+###初速度
+velocity   co2      create $T  2117357 dist gaussian 
+velocity   h2o        create $T  2542657 dist gaussian
+velocity   hu2ou        create $T  2542657 dist gaussian
+
+
+timestep       1
+
+dump  1  all    custom 1000  sq3.5nm.lammpstrj    id type x y z element 
+
+dump_modify     1   element   O O Si H C O O H O H He   
+
+
+fix     mynvt1  h2o    nvt  temp $T  $T  100
+fix     mynvt2  hu2ou    nvt  temp $T  $T  100
+fix     mynvt3  co2     nvt  temp $T  $T  100
+
+
+run     3000000
+
+
+write_restart  restart.1
+#############################################
+
+undump 1
+unfix mynvt1
+unfix mynvt2
+unfix mynvt3
+
+reset_timestep 0
+timestep       1
+thermo         1000
+thermo_style   custom step cpu temp press etotal enthalpy epair evdwl ecoul ebond eangle pe ke
+
+
+
+unfix setforce1
+#unfix setforce3
+unfix r1
+#unfix r3
+
+
+ fix  r5  plane1    rigid  single  force  1 on off off torque 1 off off off
+#fix  r6  plane3    rigid  single  force  1 on off off torque 1 off off off
+
+
+
+fix  aveforce2  plane1 aveforce    0.00746047 NULL  NULL #
+#fix  aveforce2  plane3 aveforce   -0.00426313 NULL  NULL #
+neigh_modify exclude group co2 plane2     ###
+neigh_modify exclude group h2o plane2
+neigh_modify exclude group hu2ou plane2
+
+
+compute  1  co2  group/group  h2o
+compute  2  co2  group/group  wall     
+compute  3  h2o  group/group  wall   
+compute  4  h2o  group/group  hu2ou
+compute  5  co2  group/group  hu2ou
+compute  6  hu2ou  group/group  wall
+
+
+
+fix  1  co2  ave/time  2  1000  2000  c_1  c_1[1]  c_1[2]  c_1[3]  file Interaction-h2o-co2.data  
+fix  2  co2  ave/time  2  1000  2000  c_2  c_2[1]  c_2[2]  c_2[3]  file Interaction-wall-co2.data
+fix  3  h2o  ave/time  2  1000  2000  c_3  c_3[1]  c_3[2]  c_3[3]  file Interaction-h2o-wall.data
+fix  4  h2o  ave/time  2  1000  2000  c_4  c_4[1]  c_4[2]  c_4[3]  file Interaction-h2o-hu2ou.data
+fix  5  co2  ave/time  2  1000  2000  c_5  c_5[1]  c_5[2]  c_5[3]  file Interaction-hu2ou-co2.data
+fix  6  hu2ou  ave/time  2  1000  2000  c_6  c_6[1]  c_6[2]  c_6[3]  file Interaction-hu2ou-wall.data
+
+# ###################caculate MSD##################################
+compute     msd_1  co2        msd
+fix	        msd_1  co2	      ave/time	 10 100 1000    c_msd_1[1]	c_msd_1[2]	c_msd_1[3]	c_msd_1[4]	file	msd-co2.profile 
+
+compute     msd_2  h2o      msd
+fix	        msd_2  h2o	      ave/time	 10 100 1000    c_msd_2[1]	c_msd_2[2]	c_msd_2[3]	c_msd_2[4]	file	msd-h2o.profile 
+
+compute     msd_3  hu2ou      msd
+fix	        msd_3  hu2ou	      ave/time	 10 100 1000    c_msd_3[1]	c_msd_3[2]	c_msd_3[3]	c_msd_3[4]	file	msd-hu2ou.profile 
+
+
+compute zhixin1 h2o com                                 #mass center
+fix com_1 h2o ave/time 1 1000 10000 c_zhixin1[1] c_zhixin1[2] c_zhixin1[3] file com_h2o.profile
+
+compute zhixin2 co2 com                                 #mass center
+fix com_2 co2 ave/time 1 1000 10000 c_zhixin2[1] c_zhixin2[2] c_zhixin2[3] file com_co2.profile
+
+compute zhixin3 hu2ou com                                 #mass center
+fix com_3 hu2ou ave/time 1 1000 10000 c_zhixin3[1] c_zhixin3[2] c_zhixin3[3] file com_hu2ou.profile
+
+
+
+#-----------------------------------------------------------------------------------
+
+
+
+dump  2  all    custom 1000  CO2_70MD.lammpstrj    id type x y z element 
+
+dump_modify     2   element   O O Si H C O O H O H He
+
+
+fix     mynvt1  h2o   nvt  temp $T  $T  100
+
+fix     mynvt2  co2     nvt  temp $T  $T  100
+
+fix     mynvt3  hu2ou   nvt  temp $T  $T  100
+
+restart 1000000 restart.2
+
+run     1000000000
+
+
+#write_restart  restart.2
+
